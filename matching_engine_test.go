@@ -41,7 +41,7 @@ func (me *MatchingEngine) PlaceOrder(order *Order) {
 	}
 
 
-	if order.Type == "fok" {
+		if order.Type == "fok" || order.Type == "aon" {
 		if order.Side == "buy" {
 			var totalQuantity int
 			for _, ask := range me.Asks {
@@ -150,8 +150,8 @@ func newMatchingEngine() *MatchingEngine {
 	return &MatchingEngine{}
 }
 
-func TestMatchingEngine(t *testing.T) {
-	t.Run("MarketOrder", func(t *testing.T) {
+func TestMarketOrder(t *testing.T) {
+	t.Run("should place a market order", func(t *testing.T) {
 		me := newMatchingEngine()
 		order := &Order{ID: 1, OrdererID: 1, Type: "market", Side: "buy", Quantity: 10}
 		me.PlaceOrder(order)
@@ -161,7 +161,30 @@ func TestMatchingEngine(t *testing.T) {
 		}
 	})
 
-	t.Run("LimitOrder", func(t *testing.T) {
+	t.Run("should partially fill a market order", func(t *testing.T) {
+		me := newMatchingEngine()
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 5}
+		me.PlaceOrder(sellOrder)
+
+		marketOrder := &Order{ID: 2, OrdererID: 2, Type: "market", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(marketOrder)
+
+		if len(me.Trades) != 1 {
+			t.Errorf("Expected 1 trade, got %d", len(me.Trades))
+		}
+
+		if len(me.Bids) != 1 {
+			t.Errorf("Expected 1 bid order, got %d", len(me.Bids))
+		}
+
+		if me.Bids[0].Quantity != 5 {
+			t.Errorf("Expected remaining bid quantity to be 5, got %d", me.Bids[0].Quantity)
+		}
+	})
+}
+
+func TestLimitOrder(t *testing.T) {
+	t.Run("should place a limit order", func(t *testing.T) {
 		me := newMatchingEngine()
 		order := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "buy", Price: 100.0, Quantity: 10}
 		me.PlaceOrder(order)
@@ -170,35 +193,41 @@ func TestMatchingEngine(t *testing.T) {
 			t.Errorf("Expected 1 bid order, got %d", len(me.Bids))
 		}
 	})
+}
 
-	t.Run("StopLossOrder", func(t *testing.T) {
+func TestStopLossOrder(t *testing.T) {
+	t.Run("should handle stop-loss orders", func(t *testing.T) {
 		// Stop-loss orders are more complex and require a trigger price.
 		// This test will be a placeholder for now.
 	})
+}
 
-	t.Run("PostOnlyOrder", func(t *testing.T) {
+func TestAONOrder(t *testing.T) {
+	t.Run("should execute an AON order if liquidity is sufficient", func(t *testing.T) {
 		me := newMatchingEngine()
-		// This order should be rejected if it matches immediately.
-		// For now, we'll just place it.
-		order := &Order{ID: 1, OrdererID: 1, Type: "post-only", Side: "buy", Price: 100.0, Quantity: 10}
-		me.PlaceOrder(order)
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(sellOrder)
 
-		if len(me.Bids) != 1 {
-			t.Errorf("Expected 1 bid order, got %d", len(me.Bids))
+		aonOrder := &Order{ID: 2, OrdererID: 2, Type: "aon", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(aonOrder)
+
+		if len(me.Trades) != 1 {
+			t.Errorf("Expected 1 trade, got %d", len(me.Trades))
 		}
 	})
 
-	t.Run("AllOrNoneOrder", func(t *testing.T) {
+	t.Run("should reject an AON order if liquidity is insufficient", func(t *testing.T) {
 		me := newMatchingEngine()
-		order := &Order{ID: 1, OrdererID: 1, Type: "aon", Side: "buy", Price: 100.0, Quantity: 10}
-		me.PlaceOrder(order)
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 5}
+		me.PlaceOrder(sellOrder)
 
-		if len(me.Bids) != 1 {
-			t.Errorf("Expected 1 bid order, got %d", len(me.Bids))
+		aonOrder := &Order{ID: 2, OrdererID: 2, Type: "aon", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(aonOrder)
+
+		if len(me.Trades) != 0 {
+			t.Errorf("Expected 0 trades, got %d", len(me.Trades))
 		}
 	})
-
-
 }
 
 func TestMatchingLogic(t *testing.T) {
@@ -244,33 +273,59 @@ func TestOrderBookSorting(t *testing.T) {
 }
 
 func TestPostOnlyOrder(t *testing.T) {
-	me := newMatchingEngine()
-	sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 10}
-	me.PlaceOrder(sellOrder)
+	t.Run("should place a post-only order if it does not cross the spread", func(t *testing.T) {
+		me := newMatchingEngine()
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 101.0, Quantity: 10}
+		me.PlaceOrder(sellOrder)
 
-	postOnlyOrder := &Order{ID: 2, OrdererID: 2, Type: "post-only", Side: "buy", Price: 100.0, Quantity: 10}
-	me.PlaceOrder(postOnlyOrder)
+		postOnlyOrder := &Order{ID: 2, OrdererID: 2, Type: "post-only", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(postOnlyOrder)
 
-	if len(me.Bids) != 0 {
-		t.Errorf("Expected 0 bid orders, got %d", len(me.Bids))
-	}
+		if len(me.Bids) != 1 {
+			t.Errorf("Expected 1 bid order, got %d", len(me.Bids))
+		}
+	})
+
+	t.Run("should reject a post-only order if it crosses the spread", func(t *testing.T) {
+		me := newMatchingEngine()
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(sellOrder)
+
+		postOnlyOrder := &Order{ID: 2, OrdererID: 2, Type: "post-only", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(postOnlyOrder)
+
+		if len(me.Bids) != 0 {
+			t.Errorf("Expected 0 bid orders, got %d", len(me.Bids))
+		}
+	})
 }
 
 func TestFOKOrder(t *testing.T) {
-	me := newMatchingEngine()
-	sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 5}
-	me.PlaceOrder(sellOrder)
+	t.Run("should execute a FOK order if liquidity is sufficient", func(t *testing.T) {
+		me := newMatchingEngine()
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(sellOrder)
 
-	fokOrder := &Order{ID: 2, OrdererID: 2, Type: "fok", Side: "buy", Price: 100.0, Quantity: 10}
-	me.PlaceOrder(fokOrder)
+		fokOrder := &Order{ID: 2, OrdererID: 2, Type: "fok", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(fokOrder)
 
-	if len(me.Bids) != 0 {
-		t.Errorf("Expected 0 bid orders, got %d", len(me.Bids))
-	}
+		if len(me.Trades) != 1 {
+			t.Errorf("Expected 1 trade, got %d", len(me.Trades))
+		}
+	})
 
-	if len(me.Asks) != 1 {
-		t.Errorf("Expected 1 ask order, got %d", len(me.Asks))
-	}
+	t.Run("should reject a FOK order if liquidity is insufficient", func(t *testing.T) {
+		me := newMatchingEngine()
+		sellOrder := &Order{ID: 1, OrdererID: 1, Type: "limit", Side: "sell", Price: 100.0, Quantity: 5}
+		me.PlaceOrder(sellOrder)
+
+		fokOrder := &Order{ID: 2, OrdererID: 2, Type: "fok", Side: "buy", Price: 100.0, Quantity: 10}
+		me.PlaceOrder(fokOrder)
+
+		if len(me.Trades) != 0 {
+			t.Errorf("Expected 0 trades, got %d", len(me.Trades))
+		}
+	})
 }
 
 func TestIOCOrder(t *testing.T) {
