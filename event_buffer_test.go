@@ -1,46 +1,31 @@
 package main
 
 import (
-	"sync"
 	"testing"
 )
 
-func TestEventBuffer(t *testing.T) {
-	var wg sync.WaitGroup
-	var loggedEvents []Event
-	var processedEvents []Event
+func TestEventBus(t *testing.T) {
+	bus := NewEventBus(4)
 
-	eventLogger := func(e Event) {
-		loggedEvents = append(loggedEvents, e)
-		wg.Done()
+	bus.Publish(Event{Data: "1"})
+	bus.Publish(Event{Data: "2"})
+	bus.Publish(Event{Data: "3"})
+
+	sub := bus.Subscribe()
+
+	bus.Publish(Event{Data: "4"})
+	bus.Publish(Event{Data: "5"})
+
+	e, ok := sub.Poll()
+	if !ok || e.Data != "4" {
+		t.Errorf("poll failed, expected 4, got %s", e.Data)
 	}
-
-	matchingEngine := func(events []Event) {
-		processedEvents = append(processedEvents, events...)
+	e, ok = sub.Poll()
+	if !ok || e.Data != "5" {
+		t.Errorf("poll failed, expected 5, got %s", e.Data)
 	}
-
-	eventBuffer := &EventBuffer{
-		handler:   eventLogger,
-		processor: matchingEngine,
-	}
-
-	// Test concurrent event handling
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(i int) {
-			eventBuffer.AddEvent(Event{Data: "event"})
-		}(i)
-	}
-
-	wg.Wait()
-
-	if len(loggedEvents) != 10 {
-		t.Errorf("Expected 10 logged events, got %d", len(loggedEvents))
-	}
-
-	eventBuffer.ProcessEvents()
-
-	if len(processedEvents) != 10 {
-		t.Errorf("Expected 10 processed events, got %d", len(processedEvents))
+	_, ok = sub.Poll()
+	if ok {
+		t.Error("poll should have failed")
 	}
 }
