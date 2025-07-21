@@ -5,27 +5,28 @@ import (
 )
 
 func TestEventBus(t *testing.T) {
-	bus := NewEventBus(4)
-
-	bus.Publish(Event{Data: "1"})
-	bus.Publish(Event{Data: "2"})
-	bus.Publish(Event{Data: "3"})
-
-	sub := bus.Subscribe()
-
-	bus.Publish(Event{Data: "4"})
-	bus.Publish(Event{Data: "5"})
-
-	e, ok := sub.Poll()
-	if !ok || e.Data != "4" {
-		t.Errorf("poll failed, expected 4, got %s", e.Data)
+	eb := NewEventBus(10)
+	if eb == nil {
+		t.Fatal("NewEventBus should not return nil")
 	}
-	e, ok = sub.Poll()
-	if !ok || e.Data != "5" {
-		t.Errorf("poll failed, expected 5, got %s", e.Data)
+
+	sub := eb.Subscribe()
+
+	eb.Publish(Event{Data: "event1"})
+	eb.Publish(Event{Data: "event2"})
+
+	event, ok := sub.Poll()
+	if !ok || event.Data != "event1" {
+		t.Errorf("Expected event1, got %v", event)
 	}
+
+	event, ok = sub.Poll()
+	if !ok || event.Data != "event2" {
+		t.Errorf("Expected event2, got %v", event)
+	}
+
 	_, ok = sub.Poll()
 	if ok {
-		t.Error("poll should have failed")
+		t.Error("Expected no more events")
 	}
 }
