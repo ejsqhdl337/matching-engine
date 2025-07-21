@@ -35,15 +35,9 @@ func NewRingBuffer(size int64) *RingBuffer {
 	}
 }
 
-func (rb *RingBuffer) Enqueue(e Event) bool {
-	tail := atomic.LoadInt64(&rb.tail)
-	head := atomic.LoadInt64(&rb.head)
-	if tail-head == rb.size {
-		return false // buffer is full
-	}
-	rb.buffer[tail&rb.mask] = e
-	atomic.AddInt64(&rb.tail, 1)
-	return true
+func (rb *RingBuffer) Enqueue(e Event) {
+	tail := atomic.AddInt64(&rb.tail, 1)
+	rb.buffer[(tail-1)&rb.mask] = e
 }
 
 func (rb *RingBuffer) Dequeue() (Event, bool) {
@@ -74,7 +68,7 @@ func (eb *EventBus) Publish(e Event) {
 func (eb *EventBus) Subscribe() *Subscription {
 	return &Subscription{
 		buffer: eb.buffer,
-		cursor: eb.buffer.tail,
+		cursor: atomic.LoadInt64(&eb.buffer.tail),
 	}
 }
 
@@ -84,7 +78,8 @@ type Subscription struct {
 }
 
 func (s *Subscription) Poll() (Event, bool) {
-	if s.cursor == s.buffer.tail {
+	tail := atomic.LoadInt64(&s.buffer.tail)
+	if s.cursor >= tail {
 		return Event{}, false
 	}
 	e := s.buffer.buffer[s.cursor&s.buffer.mask]
