@@ -1,46 +1,52 @@
 package main
 
 import (
-	"sync"
 	"testing"
 )
 
-func TestEventBuffer(t *testing.T) {
-	var wg sync.WaitGroup
-	var loggedEvents []Event
-	var processedEvents []Event
+func TestEventBus(t *testing.T) {
+	bus := NewEventBus(1024)
+	sub1 := bus.Subscribe()
+	sub2 := bus.Subscribe()
 
-	eventLogger := func(e Event) {
-		loggedEvents = append(loggedEvents, e)
-		wg.Done()
+	bus.Publish(Event{Data: "1"})
+	bus.Publish(Event{Data: "2"})
+
+	e, ok := sub1.Poll()
+	if !ok || e.Data != "1" {
+		t.Errorf("sub1 poll failed, expected 1, got %s", e.Data)
+	}
+	e, ok = sub1.Poll()
+	if !ok || e.Data != "2" {
+		t.Errorf("sub1 poll failed, expected 2, got %s", e.Data)
+	}
+	_, ok = sub1.Poll()
+	if ok {
+		t.Error("sub1 poll should have failed")
 	}
 
-	matchingEngine := func(events []Event) {
-		processedEvents = append(processedEvents, events...)
+	e, ok = sub2.Poll()
+	if !ok || e.Data != "1" {
+		t.Errorf("sub2 poll failed, expected 1, got %s", e.Data)
+	}
+	e, ok = sub2.Poll()
+	if !ok || e.Data != "2" {
+		t.Errorf("sub2 poll failed, expected 2, got %s", e.Data)
+	}
+	_, ok = sub2.Poll()
+	if ok {
+		t.Error("sub2 poll should have failed")
 	}
 
-	eventBuffer := &EventBuffer{
-		handler:   eventLogger,
-		processor: matchingEngine,
+	bus.Publish(Event{Data: "3"})
+
+	e, ok = sub1.Poll()
+	if !ok || e.Data != "3" {
+		t.Errorf("sub1 poll failed, expected 3, got %s", e.Data)
 	}
 
-	// Test concurrent event handling
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func(i int) {
-			eventBuffer.AddEvent(Event{Data: "event"})
-		}(i)
-	}
-
-	wg.Wait()
-
-	if len(loggedEvents) != 10 {
-		t.Errorf("Expected 10 logged events, got %d", len(loggedEvents))
-	}
-
-	eventBuffer.ProcessEvents()
-
-	if len(processedEvents) != 10 {
-		t.Errorf("Expected 10 processed events, got %d", len(processedEvents))
+	e, ok = sub2.Poll()
+	if !ok || e.Data != "3" {
+		t.Errorf("sub2 poll failed, expected 3, got %s", e.Data)
 	}
 }
