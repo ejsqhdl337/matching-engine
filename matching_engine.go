@@ -98,13 +98,12 @@ func (me *MatchingEngine) PlaceOrder(order *Order) {
 		return
 	}
 
-	me.triggerStopLossOrders(order.Price)
-
 	if order.Type == "market" {
 		me.matchMarketOrder(order)
 	} else {
 		me.matchLimitOrder(order)
 	}
+	me.triggerStopLossOrders(order.Price)
 }
 
 func (me *MatchingEngine) triggerStopLossOrders(currentPrice int64) {
