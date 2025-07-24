@@ -5,93 +5,99 @@ import (
 )
 
 type Event struct {
-	Data string
+	Order *Order
+	Data  string
 }
 
+// A CacheLinePad is used to pad structs to avoid false sharing.
+// Common cache line size is 64 bytes.
+type CacheLinePad [64]byte
+
+// RingBuffer represents a single-producer, single-consumer (SPSC) lock-free queue.
 type RingBuffer struct {
-	buffer []Event
-	head   int64
-	tail   int64
-	size   int64
-	mask   int64
+	data []Event // The underlying fixed-size buffer
+
+	// head and tail indices are padded to prevent false sharing.
+	// We use uint64 for indices for Go's atomic operations.
+	readIdx  atomic.Uint64 // Reader's index (read by consumer, written by consumer)
+	_        CacheLinePad  // Padding to separate readIdx and writeIdxCached
+
+	writeIdxCached uint64 // Consumer's cached copy of the producer's writeIdx
+	_              CacheLinePad  // Padding to separate writeIdxCached and writeIdx
+
+	writeIdx atomic.Uint64 // Writer's index (read by producer, written by producer)
+	_        CacheLinePad  // Padding to separate writeIdx and readIdxCached
+
+	readIdxCached uint64 // Producer's cached copy of the consumer's readIdx
+	mask          uint64
+	// No padding needed after the last field
 }
 
-func NewRingBuffer(size int64) *RingBuffer {
-	if size <= 0 {
-		size = 1024
+// New creates a new RingBuffer with a given capacity.
+// Capacity must be a power of two.
+func NewRingBuffer(capacity uint64) *RingBuffer {
+	if capacity == 0 {
+		panic("capacity cannot be zero")
 	}
-	// ensure size is a power of 2
-	if (size & (size - 1)) != 0 {
-		var power int64 = 1
-		for power < size {
-			power *= 2
-		}
-		size = power
+	if (capacity & (capacity - 1)) != 0 {
+		panic("capacity must be a power of two for this implementation")
 	}
 	return &RingBuffer{
-		buffer: make([]Event, size),
-		size:   size,
-		mask:   size - 1,
+		data: make([]Event, capacity),
+		mask: capacity - 1,
 	}
 }
 
-func (rb *RingBuffer) Enqueue(e Event) {
-	tail := atomic.LoadInt64(&rb.tail)
-	nextTail := tail + 1
-	if nextTail-atomic.LoadInt64(&rb.head) > rb.size {
-		atomic.AddInt64(&rb.head, 1)
+// Push attempts to add an item to the ring buffer.
+// Returns true if successful, false if the buffer is full.
+func (rb *RingBuffer) Push(item Event) bool {
+	writeIdx := rb.writeIdx.Load()
+	nextWriteIdx := writeIdx + 1
+
+	// Check if buffer is full using cached read index.
+	// If the cached index says it's full, then load the actual read index and re-check.
+	if nextWriteIdx-rb.readIdxCached == uint64(len(rb.data)) {
+		rb.readIdxCached = rb.readIdx.Load() // Atomic Load
+		if nextWriteIdx-rb.readIdxCached == uint64(len(rb.data)) {
+			return false // Still full
+		}
 	}
-	rb.buffer[tail&rb.mask] = e
-	atomic.StoreInt64(&rb.tail, nextTail)
+
+	rb.data[writeIdx&rb.mask] = item
+	rb.writeIdx.Store(nextWriteIdx) // Atomic Store (memory_order_release equivalent)
+	return true
 }
 
-func (rb *RingBuffer) Dequeue() (Event, bool) {
-	head := atomic.LoadInt64(&rb.head)
-	tail := atomic.LoadInt64(&rb.tail)
-	if head >= tail {
-		return Event{}, false
+// Pop attempts to retrieve an item from the ring buffer.
+// Returns the item and true if successful, or default(T) and false if the buffer is empty.
+func (rb *RingBuffer) Pop() (Event, bool) {
+	readIdx := rb.readIdx.Load() // Atomic Load (memory_order_relaxed equivalent in C++ context)
+
+	// Check if buffer is empty using cached write index.
+	// If the cached index says it's empty, then load the actual write index and re-check.
+	if readIdx == rb.writeIdxCached {
+		rb.writeIdxCached = rb.writeIdx.Load() // Atomic Load (memory_order_acquire equivalent)
+		if readIdx == rb.writeIdxCached {
+			var zero Event // Return zero value for type T
+			return zero, false // Still empty
+		}
 	}
-	e := rb.buffer[head&rb.mask]
-	atomic.AddInt64(&rb.head, 1)
-	return e, true
+
+	item := rb.data[readIdx&rb.mask]
+	var zero Event // Zero out the slot to allow GC if item is a pointer type
+	rb.data[readIdx&rb.mask] = zero
+
+	nextReadIdx := readIdx + 1
+
+	rb.readIdx.Store(nextReadIdx) // Atomic Store (memory_order_release equivalent)
+	return item, true
 }
 
-type EventBus struct {
-	buffer *RingBuffer
-}
-
-func NewEventBus(size int64) *EventBus {
-	return &EventBus{
-		buffer: NewRingBuffer(size),
-	}
-}
-
-func (eb *EventBus) Publish(e Event) {
-	eb.buffer.Enqueue(e)
-}
-
-func (eb *EventBus) Subscribe() *Subscription {
-	return &Subscription{
-		buffer: eb.buffer,
-		cursor: atomic.LoadInt64(&eb.buffer.head),
-	}
-}
-
-type Subscription struct {
-	buffer *RingBuffer
-	cursor int64
-}
-
-func (s *Subscription) Poll() (Event, bool) {
-	tail := atomic.LoadInt64(&s.buffer.tail)
-	head := atomic.LoadInt64(&s.buffer.head)
-	if s.cursor < head {
-		s.cursor = head
-	}
-	if s.cursor >= tail {
-		return Event{}, false
-	}
-	e := s.buffer.buffer[s.cursor&s.buffer.mask]
-	s.cursor++
-	return e, true
+// Size returns the approximate number of items in the buffer.
+// Note: This is an approximation in a concurrent context without stronger synchronization.
+func (rb *RingBuffer) Size() uint64 {
+	// Atomically load both indices to get a more consistent view, though still subject to race.
+	w := rb.writeIdx.Load()
+	r := rb.readIdx.Load()
+	return w - r
 }

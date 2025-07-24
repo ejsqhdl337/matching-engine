@@ -1,79 +1,75 @@
 package main
 
 import (
+	"sync"
 	"testing"
 )
 
-func TestEventBus(t *testing.T) {
-	t.Run("should publish and poll events", func(t *testing.T) {
-		eb := NewEventBus(10)
-		sub := eb.Subscribe()
+func TestRingBuffer(t *testing.T) {
+	t.Run("should push and pop items", func(t *testing.T) {
+		rb := NewRingBuffer(2)
 
-		eb.Publish(Event{Data: "event1"})
-		eb.Publish(Event{Data: "event2"})
+		ok := rb.Push(Event{Data: "event1"})
+		if !ok {
+			t.Fatal("push failed")
+		}
 
-		event, ok := sub.Poll()
+		event, ok := rb.Pop()
 		if !ok || event.Data != "event1" {
-			t.Errorf("Expected event1, got %v", event)
-		}
-
-		event, ok = sub.Poll()
-		if !ok || event.Data != "event2" {
-			t.Errorf("Expected event2, got %v", event)
+			t.Errorf("expected event1, got %v", event)
 		}
 	})
 
-	t.Run("should return not ok when polling empty buffer", func(t *testing.T) {
-		eb := NewEventBus(10)
-		sub := eb.Subscribe()
+	t.Run("should return not ok when popping empty buffer", func(t *testing.T) {
+		rb := NewRingBuffer(2)
 
-		_, ok := sub.Poll()
+		_, ok := rb.Pop()
 		if ok {
-			t.Error("Expected no events, but got one")
+			t.Error("expected no events, but got one")
 		}
 	})
 
-	t.Run("should handle multiple subscribers", func(t *testing.T) {
-		eb := NewEventBus(10)
-		sub1 := eb.Subscribe()
-		sub2 := eb.Subscribe()
+	t.Run("should return not ok when pushing to full buffer", func(t *testing.T) {
+		rb := NewRingBuffer(2)
 
-		eb.Publish(Event{Data: "event1"})
+		rb.Push(Event{Data: "event1"})
+		rb.Push(Event{Data: "event2"})
 
-		event1, ok1 := sub1.Poll()
-		if !ok1 || event1.Data != "event1" {
-			t.Errorf("Subscriber 1 expected event1, got %v", event1)
-		}
-
-		event2, ok2 := sub2.Poll()
-		if !ok2 || event2.Data != "event1" {
-			t.Errorf("Subscriber 2 expected event1, got %v", event2)
-		}
-	})
-
-	t.Run("should handle buffer full condition", func(t *testing.T) {
-		eb := NewEventBus(2)
-		sub := eb.Subscribe()
-
-		eb.Publish(Event{Data: "event1"})
-		eb.Publish(Event{Data: "event2"})
-		eb.Publish(Event{Data: "event3"}) // This should overwrite event1
-
-		// The subscription starts after the events have been published,
-		// so it will only see the events currently in the buffer.
-		event, ok := sub.Poll()
-		if !ok || event.Data != "event2" {
-			t.Errorf("Expected event2, got %v", event)
-		}
-
-		event, ok = sub.Poll()
-		if !ok || event.Data != "event3" {
-			t.Errorf("Expected event3, got %v", event)
-		}
-
-		_, ok = sub.Poll()
+		ok := rb.Push(Event{Data: "event3"})
 		if ok {
-			t.Error("Expected no more events")
+			t.Error("expected push to fail, but it succeeded")
+		}
+	})
+
+	t.Run("should handle concurrent push and pop", func(t *testing.T) {
+		rb := NewRingBuffer(1024)
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				for !rb.Push(Event{Data: "event"}) {
+				}
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				for {
+					_, ok := rb.Pop()
+					if ok {
+						break
+					}
+				}
+			}
+		}()
+
+		wg.Wait()
+
+		if rb.Size() != 0 {
+			t.Errorf("expected buffer to be empty, but size is %d", rb.Size())
 		}
 	})
 }
