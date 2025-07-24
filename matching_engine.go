@@ -64,22 +64,41 @@ func (pq *StopLossQueue) Pop() interface{} {
 
 type MatchingEngine struct {
 	orderBook      *OrderBook
-	eventBus       *EventBus
 	buyStopOrders  *StopLossQueue
 	sellStopOrders *StopLossQueue
+	inputBuffer    *RingBuffer
+	outputBuffer   *RingBuffer
 }
 
-func NewMatchingEngine() *MatchingEngine {
+func NewMatchingEngine(outputBuffer *RingBuffer) *MatchingEngine {
 	buyStopOrders := &StopLossQueue{}
 	sellStopOrders := &StopLossQueue{}
 	heap.Init(buyStopOrders)
 	heap.Init(sellStopOrders)
 	return &MatchingEngine{
-		// MinTickSize is set to 1, which means the smallest price change is 0.0001 (since PricePrecision is 10000).
 		orderBook:      NewOrderBook(&OrderBookConfig{MinTickSize: 1}),
-		eventBus:       NewEventBus(1024),
 		buyStopOrders:  buyStopOrders,
 		sellStopOrders: sellStopOrders,
+		inputBuffer:    NewRingBuffer(1024),
+		outputBuffer:   outputBuffer,
+	}
+}
+
+func (me *MatchingEngine) Run() {
+	for {
+		_, ok := me.inputBuffer.Pop()
+		if !ok {
+			continue
+		}
+		// me.PlaceOrder(event.Order)
+	}
+}
+
+func (me *MatchingEngine) PlaceOrders(orders []*Order) {
+	for _, order := range orders {
+		for !me.inputBuffer.Push(Event{Order: order}) {
+			// Keep trying until the push is successful
+		}
 	}
 }
 
@@ -215,7 +234,7 @@ func (me *MatchingEngine) executeTrade(takerOrder *Order, makerOrder *BookOrder,
 		trade.Quantity = makerOrder.Quantity
 	}
 
-	me.eventBus.Publish(Event{Data: fmt.Sprintf("TRADE: %v", trade)})
+	me.outputBuffer.Push(Event{Data: fmt.Sprintf("TRADE: %v", trade)})
 	me.triggerStopLossOrders(price)
 }
 
@@ -229,5 +248,5 @@ func (me *MatchingEngine) TakeSnapshot() {
 		order := item.value
 		snapshot = append(snapshot, fmt.Sprintf("ASK: %d, %d, %d", order.ID, order.Price, order.Quantity))
 	}
-	me.eventBus.Publish(Event{Data: fmt.Sprintf("SNAPSHOT: %v", snapshot)})
+	me.outputBuffer.Push(Event{Data: fmt.Sprintf("SNAPSHOT: %v", snapshot)})
 }
