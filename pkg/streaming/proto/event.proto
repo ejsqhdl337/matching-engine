@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package streaming;
+
+option go_package = "pkg/streaming/proto";
+
+message Event {
+  int64 timestamp = 1;
+  bytes payload = 2;
+}
+
+message AddRequest {
+  repeated bytes payloads = 1;
+}
+
+message AddResponse {
+  // Empty response
+}
+
+message PollRequest {
+  int32 max_events = 1;
+}
+
+message PollResponse {
+  repeated Event events = 1;
+}
+
+service EventService {
+  rpc Add(AddRequest) returns (AddResponse);
+  rpc Poll(PollRequest) returns (stream PollResponse);
+}
