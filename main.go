@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"matching_engine/pkg/matching"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -76,19 +77,19 @@ func (h *Hub) run() {
 }
 
 var (
-	trades = make([]*Trade, 0)
+	trades = make([]*matching.Trade, 0)
 )
 
 func main() {
-	outputBuffer := NewRingBuffer(1024)
-	me := NewMatchingEngine(outputBuffer)
+	outputBuffer := matching.NewRingBuffer(1024)
+	me := matching.NewMatchingEngine(outputBuffer)
 	hub := newHub()
 
 	go me.Run()
 	go hub.run()
 
 	http.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request) {
-		var orders []*Order
+		var orders []*matching.Order
 		if err := json.NewDecoder(r.Body).Decode(&orders); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -104,7 +105,7 @@ func main() {
 				continue
 			}
 
-			if trade, ok := event.Data.(Trade); ok {
+			if trade, ok := event.Data.(matching.Trade); ok {
 				trades = append(trades, &trade)
 			}
 
@@ -148,12 +149,12 @@ func main() {
 
 			switch msg.Type {
 			case "place_order":
-				var order Order
+				var order matching.Order
 				if err := json.Unmarshal(msg.Data, &order); err != nil {
 					log.Println(err)
 					continue
 				}
-				me.PlaceOrders([]*Order{&order})
+				me.PlaceOrders([]*matching.Order{&order})
 			case "get_recent_trades":
 				jsonTrades, err := json.Marshal(trades)
 				if err != nil {

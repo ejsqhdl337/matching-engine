@@ -1,4 +1,4 @@
-package main
+package matching
 
 import (
 	"sync/atomic"
@@ -6,7 +6,7 @@ import (
 
 type Event struct {
 	Order *Order
-	Data  string
+	Data  interface{}
 }
 
 // A CacheLinePad is used to pad structs to avoid false sharing.

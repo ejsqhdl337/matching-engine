@@ -1,4 +1,4 @@
-package main
+package matching
 
 import (
 	"container/heap"
@@ -249,4 +249,12 @@ func (me *MatchingEngine) TakeSnapshot() {
 		snapshot = append(snapshot, fmt.Sprintf("ASK: %d, %d, %d", order.ID, order.Price, order.Quantity))
 	}
 	me.outputBuffer.Push(Event{Data: fmt.Sprintf("SNAPSHOT: %v", snapshot)})
+}
+
+func (me *MatchingEngine) GetInputBufferSize() uint64 {
+	return me.inputBuffer.Size()
+}
+
+func (me *MatchingEngine) GetOrderBook() *OrderBook {
+	return me.orderBook
 }
