@@ -106,3 +106,27 @@ Furthermore, the impact of network latency, particularly when physical servers a
 ## More
 
 *   **Minimal LMAX Concept Implementation (Python):** https://github.com/quantyle/matching-engine
+
+---
+
+## TODO
+
+### Features
+
+- [ ] Implement the remaining order types: Post-Only, All-or-None (AON), Fill-or-Kill (FOK), and Immediate-or-Cancel (IOC).
+- [ ] Add more comprehensive logging and error handling.
+- [ ] Implement a persistent data store for orders and trades.
+- [ ] Add authentication and authorization to the API.
+- [ ] Create a more comprehensive testing framework.
+
+### Performance
+
+- [ ] Optimize the order matching algorithm.
+- [ ] Use a more efficient data structure for the order book.
+- [ ] Implement a more sophisticated event queuing system.
+
+### Architecture
+
+- [ ] Decouple the matching engine from the API.
+- [ ] Implement a more robust and scalable architecture.
+- [ ] Use a configuration file for system parameters.

@@ -1,7 +1,6 @@
-package main
+package matching
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -26,8 +25,10 @@ func TestMatchingEngine_PlaceLimitOrder(t *testing.T) {
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if trade, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
+		} else if trade.TakerOrderID != 2 {
+			t.Errorf("Expected taker order ID to be 2, got %d", trade.TakerOrderID)
 		}
 		if me.orderBook.BestBid().Quantity != 5 {
 			t.Errorf("Expected best bid quantity to be 5, got %d", me.orderBook.BestBid().Quantity)
@@ -50,8 +51,8 @@ func TestMatchingEngine_PartialFill(t *testing.T) {
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 		if me.orderBook.BestBid().Quantity != 5 {
 			t.Errorf("Expected best bid quantity to be 5, got %d", me.orderBook.BestBid().Quantity)
@@ -79,16 +80,16 @@ func TestMatchingEngine_MultipleFills(t *testing.T) {
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 
 		event, ok = outputBuffer.Pop()
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 
 		if me.orderBook.BestAsk() != nil {
@@ -112,8 +113,8 @@ func TestMatchingEngine_PlaceMarketOrder(t *testing.T) {
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 		if me.orderBook.BestAsk() != nil {
 			t.Errorf("Expected order book to be empty, but got %v", me.orderBook.BestAsk())
@@ -147,16 +148,16 @@ func TestMatchingEngine_PlaceStopLossOrder(t *testing.T) {
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 
 		event, ok = outputBuffer.Pop()
 		if !ok {
 			t.Fatal("Expected an event, but got none")
 		}
-		if !strings.HasPrefix(event.Data, "TRADE:") {
-			t.Errorf("Expected a trade event, but got %s", event.Data)
+		if _, ok := event.Data.(Trade); !ok {
+			t.Errorf("Expected a trade event, but got %v", event.Data)
 		}
 
 		if me.sellStopOrders.Len() != 0 {

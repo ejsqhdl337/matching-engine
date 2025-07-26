@@ -1,4 +1,4 @@
-package main
+package matching
 
 import (
 	"container/heap"
@@ -86,11 +86,11 @@ func NewMatchingEngine(outputBuffer *RingBuffer) *MatchingEngine {
 
 func (me *MatchingEngine) Run() {
 	for {
-		_, ok := me.inputBuffer.Pop()
+		event, ok := me.inputBuffer.Pop()
 		if !ok {
 			continue
 		}
-		// me.PlaceOrder(event.Order)
+		me.PlaceOrder(event.Order)
 	}
 }
 
@@ -234,7 +234,7 @@ func (me *MatchingEngine) executeTrade(takerOrder *Order, makerOrder *BookOrder,
 		trade.Quantity = makerOrder.Quantity
 	}
 
-	me.outputBuffer.Push(Event{Data: fmt.Sprintf("TRADE: %v", trade)})
+	me.outputBuffer.Push(Event{Data: trade})
 	me.triggerStopLossOrders(price)
 }
 
@@ -249,4 +249,12 @@ func (me *MatchingEngine) TakeSnapshot() {
 		snapshot = append(snapshot, fmt.Sprintf("ASK: %d, %d, %d", order.ID, order.Price, order.Quantity))
 	}
 	me.outputBuffer.Push(Event{Data: fmt.Sprintf("SNAPSHOT: %v", snapshot)})
+}
+
+func (me *MatchingEngine) GetInputBufferSize() uint64 {
+	return me.inputBuffer.Size()
+}
+
+func (me *MatchingEngine) GetOrderBook() *OrderBook {
+	return me.orderBook
 }

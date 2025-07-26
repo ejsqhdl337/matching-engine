@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"matching_engine/pkg/matching"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,11 +15,11 @@ import (
 )
 
 func TestOrdersHandler(t *testing.T) {
-	outputBuffer := NewRingBuffer(1024)
-	me := NewMatchingEngine(outputBuffer)
+	outputBuffer := matching.NewRingBuffer(1024)
+	me := matching.NewMatchingEngine(outputBuffer)
 
-	orders := []*Order{
-		{ID: 1, Type: "limit", Side: "buy", Price: 100 * PricePrecision, Quantity: 10},
+	orders := []*matching.Order{
+		{ID: 1, Type: "limit", Side: "buy", Price: 100 * matching.PricePrecision, Quantity: 10},
 	}
 	body, _ := json.Marshal(orders)
 	req, err := http.NewRequest("POST", "/orders", bytes.NewReader(body))
@@ -28,7 +29,7 @@ func TestOrdersHandler(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var orders []*Order
+		var orders []*matching.Order
 		if err := json.NewDecoder(r.Body).Decode(&orders); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -47,14 +48,14 @@ func TestOrdersHandler(t *testing.T) {
 	// Allow some time for the order to be processed
 	time.Sleep(10 * time.Millisecond)
 
-	if me.inputBuffer.Size() != 1 {
-		t.Errorf("Expected 1 order in the input buffer, got %d", me.inputBuffer.Size())
+	if me.GetInputBufferSize() != 1 {
+		t.Errorf("Expected 1 order in the input buffer, got %d", me.GetInputBufferSize())
 	}
 }
 
 func TestWebsocketHandler(t *testing.T) {
-	outputBuffer := NewRingBuffer(1024)
-	me := NewMatchingEngine(outputBuffer)
+	outputBuffer := matching.NewRingBuffer(1024)
+	me := matching.NewMatchingEngine(outputBuffer)
 
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -84,16 +85,16 @@ func TestWebsocketHandler(t *testing.T) {
 	}
 	defer ws.Close()
 
-	order := &Order{ID: 1, Type: "limit", Side: "buy", Price: 100 * PricePrecision, Quantity: 10}
-	me.orderBook.AddOrder(&BookOrder{ID: order.ID, Side: order.Side, Price: order.Price, Quantity: order.Quantity})
+	order := &matching.Order{ID: 1, Type: "limit", Side: "buy", Price: 100 * matching.PricePrecision, Quantity: 10}
+	me.GetOrderBook().AddOrder(&matching.BookOrder{ID: order.ID, Side: order.Side, Price: order.Price, Quantity: order.Quantity})
 	me.TakeSnapshot()
 
-	var event Event
+	var event matching.Event
 	if err := ws.ReadJSON(&event); err != nil {
 		t.Fatalf("could not read json from ws: %v", err)
 	}
 
-	if !strings.HasPrefix(event.Data, "SNAPSHOT:") {
+	if _, ok := event.Data.(string); !ok || !strings.HasPrefix(event.Data.(string), "SNAPSHOT:") {
 		t.Errorf("Expected a snapshot event, but got %s", event.Data)
 	}
 }
