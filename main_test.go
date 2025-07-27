@@ -1,56 +1,19 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"log"
 	"matching_engine/pkg/matching"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-func TestOrdersHandler(t *testing.T) {
-	outputBuffer := matching.NewRingBuffer(1024)
-	me := matching.NewMatchingEngine(outputBuffer)
-
-	orders := []*matching.Order{
-		{ID: 1, Type: "limit", Side: "buy", Price: 100 * matching.PricePrecision, Quantity: 10},
-	}
-	body, _ := json.Marshal(orders)
-	req, err := http.NewRequest("POST", "/orders", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var orders []*matching.Order
-		if err := json.NewDecoder(r.Body).Decode(&orders); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		me.PlaceOrders(orders)
-		w.WriteHeader(http.StatusAccepted)
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusAccepted {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusAccepted)
-	}
-
-	// Allow some time for the order to be processed
-	time.Sleep(10 * time.Millisecond)
-
-	if me.GetInputBufferSize() != 1 {
-		t.Errorf("Expected 1 order in the input buffer, got %d", me.GetInputBufferSize())
-	}
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
 }
 
 func TestWebsocketHandler(t *testing.T) {

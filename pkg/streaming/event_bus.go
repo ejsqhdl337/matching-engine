@@ -12,37 +12,54 @@ import (
 // - We are using a mutex to protect the ring buffer from concurrent access. This is a simple solution, but it can be a bottleneck.
 // - For a high-performance system, we would want to use a lock-free data structure or a single-writer design.
 type EventBus struct {
-	buffer     []*Event
-	capacity   int
-	head       int
-	tail       int
-	mutex      sync.Mutex
-	sequencer  *EventSequencer
-	store      *EventStore
-	cond       *sync.Cond
+	buffers      map[string]*topicBuffer
+	capacity     int
+	mutex        sync.Mutex
+	sequencer    *EventSequencer
+	store        *EventStore
+	topicManager *TopicManager
+	cond         *sync.Cond
 }
 
-func NewEventBus(capacity int, store *EventStore) *EventBus {
+type topicBuffer struct {
+	buffer   []*Event
+	head     int
+	tail     int
+	capacity int
+}
+
+func NewEventBus(capacity int, store *EventStore, topicManager *TopicManager) *EventBus {
 	bus := &EventBus{
-		buffer:    make([]*Event, capacity),
-		capacity:  capacity,
-		sequencer: NewEventSequencer(),
-		store:     store,
+		buffers:      make(map[string]*topicBuffer),
+		capacity:     capacity,
+		sequencer:    NewEventSequencer(),
+		store:        store,
+		topicManager: topicManager,
 	}
 	bus.cond = sync.NewCond(&bus.mutex)
 	return bus
 }
 
-func (b *EventBus) Add(payload []byte) error {
-	return b.AddBatch([][]byte{payload})
+func (b *EventBus) Add(topicName string, payload []byte) error {
+	return b.AddBatch(topicName, [][]byte{payload})
 }
 
-func (b *EventBus) AddBatch(payloads [][]byte) error {
+func (b *EventBus) AddBatch(topicName string, payloads [][]byte) error {
+	topic, err := b.topicManager.GetTopic(topicName)
+	if err != nil {
+		return err
+	}
+
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
 	for _, payload := range payloads {
+		if err := topic.Validate(payload); err != nil {
+			return err
+		}
+
 		event := &Event{
+			Topic:     topicName,
 			Timestamp: b.sequencer.Next(),
 			Payload:   payload,
 		}
@@ -51,10 +68,19 @@ func (b *EventBus) AddBatch(payloads [][]byte) error {
 			return err
 		}
 
-		b.buffer[b.tail] = event
-		b.tail = (b.tail + 1) % b.capacity
-		if b.tail == b.head {
-			b.head = (b.head + 1) % b.capacity
+		buffer, ok := b.buffers[topicName]
+		if !ok {
+			buffer = &topicBuffer{
+				buffer:   make([]*Event, b.capacity),
+				capacity: b.capacity,
+			}
+			b.buffers[topicName] = buffer
+		}
+
+		buffer.buffer[buffer.tail] = event
+		buffer.tail = (buffer.tail + 1) % buffer.capacity
+		if buffer.tail == buffer.head {
+			buffer.head = (buffer.head + 1) % buffer.capacity
 		}
 	}
 
@@ -62,38 +88,43 @@ func (b *EventBus) AddBatch(payloads [][]byte) error {
 	return nil
 }
 
-func (b *EventBus) Poll(maxEvents int) ([]*Event, error) {
+func (b *EventBus) Poll(topicName string, maxEvents int) ([]*Event, error) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
-	for b.head == b.tail {
+	buffer, ok := b.buffers[topicName]
+	if !ok {
+		return nil, nil
+	}
+
+	for buffer.head == buffer.tail {
 		b.cond.Wait()
 	}
 
 	var events []*Event
-	if b.head < b.tail {
-		end := b.tail
-		if end-b.head > maxEvents {
-			end = b.head + maxEvents
+	if buffer.head < buffer.tail {
+		end := buffer.tail
+		if end-buffer.head > maxEvents {
+			end = buffer.head + maxEvents
 		}
-		events = b.buffer[b.head:end]
-		b.head = end
+		events = buffer.buffer[buffer.head:end]
+		buffer.head = end
 	} else {
-		end := b.capacity
-		if end-b.head > maxEvents {
-			end = b.head + maxEvents
+		end := buffer.capacity
+		if end-buffer.head > maxEvents {
+			end = buffer.head + maxEvents
 		}
-		events = b.buffer[b.head:end]
-		b.head = end % b.capacity
+		events = buffer.buffer[buffer.head:end]
+		buffer.head = end % buffer.capacity
 
 		if len(events) < maxEvents {
 			remaining := maxEvents - len(events)
-			end := b.tail
+			end := buffer.tail
 			if end > remaining {
 				end = remaining
 			}
-			events = append(events, b.buffer[0:end]...)
-			b.head = end
+			events = append(events, buffer.buffer[0:end]...)
+			buffer.head = end
 		}
 	}
 

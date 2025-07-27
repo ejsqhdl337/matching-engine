@@ -14,16 +14,28 @@ func TestEventBus(t *testing.T) {
 	defer os.Remove("test_events.log")
 	defer store.Close()
 
-	bus := NewEventBus(10, store)
+	topics := []*Topic{
+		{
+			Name: "test",
+			Schema: map[string]interface{}{
+				"message": "string",
+			},
+		},
+	}
+	topicManager := NewTopicManager(topics)
+
+	bus := NewEventBus(10, store, topicManager)
 
 	// Test Add and Poll
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		bus.Add([]byte("test event 1"))
-		bus.Add([]byte("test event 2"))
+		bus.Add("test", []byte(`{"message": "test event 1"}`))
+		bus.Add("test", []byte(`{"message": "test event 2"}`))
 	}()
 
-	events, err := bus.Poll(2)
+	time.Sleep(200 * time.Millisecond)
+
+	events, err := bus.Poll("test", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,21 +44,21 @@ func TestEventBus(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
-	if string(events[0].Payload) != "test event 1" {
-		t.Errorf("expected 'test event 1', got '%s'", string(events[0].Payload))
+	if string(events[0].Payload) != `{"message": "test event 1"}` {
+		t.Errorf("expected '{\"message\": \"test event 1\"}', got '%s'", string(events[0].Payload))
 	}
 
-	if string(events[1].Payload) != "test event 2" {
-		t.Errorf("expected 'test event 2', got '%s'", string(events[1].Payload))
+	if string(events[1].Payload) != `{"message": "test event 2"}` {
+		t.Errorf("expected '{\"message\": \"test event 2\"}', got '%s'", string(events[1].Payload))
 	}
 
 	// Test AddBatch
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		bus.AddBatch([][]byte{[]byte("test event 3"), []byte("test event 4")})
+		bus.AddBatch("test", [][]byte{[]byte(`{"message": "test event 3"}`), []byte(`{"message": "test event 4"}`)})
 	}()
 
-	events, err = bus.Poll(2)
+	events, err = bus.Poll("test", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,11 +67,11 @@ func TestEventBus(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(events))
 	}
 
-	if string(events[0].Payload) != "test event 3" {
-		t.Errorf("expected 'test event 3', got '%s'", string(events[0].Payload))
+	if string(events[0].Payload) != `{"message": "test event 3"}` {
+		t.Errorf("expected '{\"message\": \"test event 3\"}', got '%s'", string(events[0].Payload))
 	}
 
-	if string(events[1].Payload) != "test event 4" {
-		t.Errorf("expected 'test event 4', got '%s'", string(events[1].Payload))
+	if string(events[1].Payload) != `{"message": "test event 4"}` {
+		t.Errorf("expected '{\"message\": \"test event 4\"}', got '%s'", string(events[1].Payload))
 	}
 }

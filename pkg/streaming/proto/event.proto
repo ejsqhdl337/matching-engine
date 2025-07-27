@@ -10,7 +10,8 @@ message Event {
 }
 
 message AddRequest {
-  repeated bytes payloads = 1;
+  string topic = 1;
+  repeated bytes payloads = 2;
 }
 
 message AddResponse {
@@ -18,7 +19,8 @@ message AddResponse {
 }
 
 message PollRequest {
-  int32 max_events = 1;
+  string topic = 1;
+  int32 max_events = 2;
 }
 
 message PollResponse {

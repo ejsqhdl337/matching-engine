@@ -28,7 +28,7 @@ func NewServer(eventBus *EventBus) *Server {
 }
 
 func (s *Server) Add(ctx context.Context, req *proto.AddRequest) (*proto.AddResponse, error) {
-	if err := s.eventBus.AddBatch(req.Payloads); err != nil {
+	if err := s.eventBus.AddBatch(req.Topic, req.Payloads); err != nil {
 		return nil, err
 	}
 	return &proto.AddResponse{}, nil
@@ -36,7 +36,7 @@ func (s *Server) Add(ctx context.Context, req *proto.AddRequest) (*proto.AddResp
 
 func (s *Server) Poll(req *proto.PollRequest, stream proto.EventService_PollServer) error {
 	for {
-		events, err := s.eventBus.Poll(int(req.MaxEvents))
+		events, err := s.eventBus.Poll(req.Topic, int(req.MaxEvents))
 		if err != nil {
 			return err
 		}

@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-func main() {
+func startMatchingEngine() {
 	conn, err := grpc.Dial("localhost:8081", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
@@ -23,7 +23,7 @@ func main() {
 	me := matching.NewMatchingEngine(nil)
 
 	go func() {
-		stream, err := client.Poll(context.Background(), &proto.PollRequest{MaxEvents: 100})
+		stream, err := client.Poll(context.Background(), &proto.PollRequest{Topic: "order", MaxEvents: 100})
 		if err != nil {
 			log.Fatalf("failed to poll: %v", err)
 		}
@@ -62,7 +62,7 @@ func main() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if _, err := client.Add(ctx, &proto.AddRequest{Payloads: payloads}); err != nil {
+		if _, err := client.Add(ctx, &proto.AddRequest{Topic: "order", Payloads: payloads}); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
