@@ -9,6 +9,7 @@ package streaming
 //   if we need to squeeze out every last drop of performance.
 // - For now, protobuf is a good starting point.
 type Event struct {
+	Topic     string
 	Timestamp int64
 	Payload   []byte
 }
